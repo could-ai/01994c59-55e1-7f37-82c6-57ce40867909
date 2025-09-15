@@ -1,6 +1,6 @@
-
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as dev;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -88,10 +88,15 @@ class _PositionsPageState extends State<PositionsPage> {
   }
 
   Future<void> _fetchPositions() async {
+    const apiUrl = "https://profitalgos.com/api/get_live_positions.php";
     try {
-      final response = await http.get(Uri.parse("https://profitalgos.com/api/get_live_positions.php"));
+      dev.log('Attempting to fetch positions from $apiUrl');
+      final response = await http.get(Uri.parse(apiUrl)).timeout(const Duration(seconds: 10));
+      dev.log('Response status: ${response.statusCode}');
+      dev.log('Response body length: ${response.body.length}');
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
+        dev.log('Parsed ${data.length} positions');
         final cutoff = DateTime.parse("2025-08-04T00:00:00Z");
         setState(() {
           _positions = data
@@ -102,6 +107,7 @@ class _PositionsPageState extends State<PositionsPage> {
                   final closeDate = DateTime.parse(p.close!);
                   return closeDate.isAfter(cutoff) || closeDate.isAtSameMomentAs(cutoff);
                 } catch (e) {
+                  dev.log('Error parsing close date for position: $e');
                   return false;
                 }
               })
@@ -111,13 +117,20 @@ class _PositionsPageState extends State<PositionsPage> {
         });
       } else {
         setState(() {
-          _error = "Failed to load positions: ${response.statusCode}";
+          _error = "Failed to load positions: HTTP ${response.statusCode}\nResponse: ${response.body}";
           _isLoading = false;
         });
       }
-    } catch (e) {
+    } on TimeoutException catch (e) {
+      dev.log('Timeout error: $e');
       setState(() {
-        _error = "Failed to load positions: $e";
+        _error = "Request timed out. Check your internet connection.";
+        _isLoading = false;
+      });
+    } catch (e) {
+      dev.log('Error fetching positions: $e');
+      setState(() {
+        _error = "Failed to load positions: $e\nPlease check your internet connection and try again.";
         _isLoading = false;
       });
     }
@@ -145,7 +158,28 @@ class _PositionsPageState extends State<PositionsPage> {
     }
 
     if (_error != null) {
-      return Center(child: Text(_error!, style: const TextStyle(color: Colors.red)));
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error, size: 48, color: Colors.red),
+              const SizedBox(height: 16),
+              Text(
+                _error!,
+                style: const TextStyle(color: Colors.red, fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _fetchPositions,
+                child: const Text('Try Again'),
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     if (_positions.isEmpty) {
